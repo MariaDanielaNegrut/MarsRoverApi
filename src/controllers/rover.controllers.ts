@@ -1,9 +1,9 @@
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
 import api_key from "../configs/config";
 import {Request, Response} from "express";
 import Rover from "../models/rover.models";
 import RoverImage from "../models/image.models";
-import moment, {Moment} from "moment";
+import moment, { Moment} from "moment";
 
 export const getAllRovers = async (req: Request, res: Response) => {
     try {
@@ -38,10 +38,7 @@ export const getAllRovers = async (req: Request, res: Response) => {
                     };
                 })
 
-                res.send(JSON.stringify({
-                    "status": 200,
-                    "data": resultData
-                }, null, 2));
+                res.send(JSON.stringify(resultData, null, 2));
             }
         }).catch(function (error){
             if (error.response) {
@@ -75,6 +72,8 @@ export const getRoverPhotos = async (req: Request, res: Response) => {
         const camera_type: string = req.params["cameraType"];
         let start_date: Moment | null = null;
         let end_date: Moment | null = null;
+        let paginationStart: number | null = null;
+        let paginationEnd: number | null = null;
 
         let resultData: RoverImage[] = [];
 
@@ -102,7 +101,33 @@ export const getRoverPhotos = async (req: Request, res: Response) => {
             }
         }
 
-        if (start_date === null && end_date === null) {
+        if (req.query.pagination_start) {
+            if (isNaN(Number(req.query.pagination_start.toString()))) {
+                res.send(JSON.stringify({
+                    "status": 406,
+                    "error": "Pagination start format invalid"
+                }, null, 2));
+
+                return;
+            } else {
+                paginationStart = Number(req.query.pagination_start);
+            }
+        }
+
+        if (req.query.pagination_end) {
+            if (isNaN(Number(req.query.pagination_end.toString()))) {
+                res.send(JSON.stringify({
+                    "status": 406,
+                    "error": "Pagination start format invalid"
+                }, null, 2));
+
+                return;
+            } else {
+                paginationEnd = Number(req.query.pagination_end);
+            }
+        }
+
+        if (paginationStart === null && paginationEnd === null) {
             axios.get(
                 `https://api.nasa.gov/mars-photos/api/v1/rovers/${rover}/photos?sol=1000&camera=${camera_type}&api_key=${api_key}`,
                 {
@@ -151,59 +176,136 @@ export const getRoverPhotos = async (req: Request, res: Response) => {
             });
             return;
         }
-        else if (start_date !== null && end_date !== null) {
-            for (var date: Moment = moment(start_date); date.diff(end_date, 'days') <= 0; date.add(1, 'days')) {
-                axios.get(
-                    `https://api.nasa.gov/mars-photos/api/v1/rovers/${rover}/photos?camera=${camera_type}&api_key=${api_key}`,
-                    {
-                        headers: {
-                            Accept: 'application/json',
-                        },
-                        params: {
-                            "earth_date": date.format("YYYY-MM-DD")
-                        }
-                    },
-                ).then((response) => {
-                    if (response.status === 200) {
-                        resultData.push(response.data["photos"].map((item: RoverImage) => {
-                            return {
-                                id: item.id,
-                                sol: item.sol,
-                                camera: {
-                                    id: item.camera.id,
-                                    name: item.camera.name,
-                                    full_name: item.camera.full_name
-                                },
-                                img_src: item.img_src,
-                                earth_date: item.earth_date
-                            };
-                        }));
 
-                        res.send(JSON.stringify({
-                            "status": 200,
-                            "data": resultData
-                        }, null, 2));
-                    }
-                }).catch(function (error) {
-                    if (error.response) {
-                        res.send(JSON.stringify({
-                            "status": error.response.status,
-                            "data": resultData
-                        }, null, 2));
-                    } else if (error.request) {
-                        res.send(JSON.stringify({
-                            "status": 406,
-                            "error": "An error occurred."
-                        }, null, 2));
-                    } else {
-                        res.send(JSON.stringify({
-                            "status": 406,
-                            "error": "An error occurred."
-                        },null, 2));
-                    }
-                });
+        if (paginationStart !== null && paginationEnd !== null) {
+            // Send all requests needed
+            const nrRequests: number = Math.ceil((paginationEnd - paginationStart) / 25);
+            const callsArrays: Promise<AxiosResponse<any, any>>[] = [];
+
+            for (let i = Math.ceil(paginationStart / 25); i <= Math.ceil(paginationEnd / 25); i++) {
+                callsArrays.push(
+                    axios.get(
+                        `https://api.nasa.gov/mars-photos/api/v1/rovers/${rover}/photos?sol=1000&camera=${camera_type}&page=${i}&api_key=${api_key}`,
+                        {
+                            headers: {
+                                Accept: 'application/json',
+                            },
+                        },
+                    )
+                );
             }
+
+            axios.all(callsArrays).then((data) => {
+                console.log(data[0].data);
+            })
+
+
+            return;
         }
+
+
+
+        // if (start_date === null && end_date === null) {
+        //     axios.get(
+        //         `https://api.nasa.gov/mars-photos/api/v1/rovers/${rover}/photos?sol=1000&camera=${camera_type}&api_key=${api_key}`,
+        //         {
+        //             headers: {
+        //                 Accept: 'application/json',
+        //             },
+        //         },
+        //     ).then((response) => {
+        //         if (response.status === 200) {
+        //             resultData = response.data["photos"].map((item: RoverImage) => {
+        //                 return {
+        //                     id: item.id,
+        //                     sol: item.sol,
+        //                     camera: {
+        //                         id: item.camera.id,
+        //                         name: item.camera.name,
+        //                         full_name: item.camera.full_name
+        //                     },
+        //                     img_src: item.img_src,
+        //                     earth_date: item.earth_date
+        //                 };
+        //             })
+        //
+        //             res.send(JSON.stringify({
+        //                 "status": 200,
+        //                 "data": resultData
+        //             }, null, 2));
+        //         }
+        //     }).catch(function (error) {
+        //         if (error.response) {
+        //             res.send(JSON.stringify({
+        //                 "status": error.response.status,
+        //                 "data": resultData
+        //             }, null, 2));
+        //         } else if (error.request) {
+        //             res.send(JSON.stringify({
+        //                 "status": 406,
+        //                 "error": "An error occurred."
+        //             }, null, 2));
+        //         } else {
+        //             res.send(JSON.stringify({
+        //                 "status": 406,
+        //                 "error": "An error occurred."
+        //             },null, 2));
+        //         }
+        //     });
+        //     return;
+        // }
+        // else if (start_date !== null && end_date !== null) {
+        //     for (var date: Moment = moment(start_date); date.diff(end_date, 'days') <= 0; date.add(1, 'days')) {
+        //         axios.get(
+        //             `https://api.nasa.gov/mars-photos/api/v1/rovers/${rover}/photos?camera=${camera_type}&api_key=${api_key}`,
+        //             {
+        //                 headers: {
+        //                     Accept: 'application/json',
+        //                 },
+        //                 params: {
+        //                     "earth_date": date.format("YYYY-MM-DD")
+        //                 }
+        //             },
+        //         ).then((response) => {
+        //             if (response.status === 200) {
+        //                 resultData.push(response.data["photos"].map((item: RoverImage) => {
+        //                     return {
+        //                         id: item.id,
+        //                         sol: item.sol,
+        //                         camera: {
+        //                             id: item.camera.id,
+        //                             name: item.camera.name,
+        //                             full_name: item.camera.full_name
+        //                         },
+        //                         img_src: item.img_src,
+        //                         earth_date: item.earth_date
+        //                     };
+        //                 }));
+        //             }
+        //         }).catch(function (error){
+        //             if (error.response) {
+        //                 res.send(JSON.stringify({
+        //                     "status": error.response.status,
+        //                     "data": resultData
+        //                 }, null, 2));
+        //             } else if (error.request) {
+        //                 res.send(JSON.stringify({
+        //                     "status": 406,
+        //                     "error": "An error occurred."
+        //                 }, null, 2));
+        //             } else {
+        //                 res.send(JSON.stringify({
+        //                     "status": 406,
+        //                     "error": "An error occurred."
+        //                 },null, 2));
+        //             }
+        //         });
+        //     }
+        //     res.send(JSON.stringify({
+        //         "status": 200,
+        //         "data": resultData
+        //     }, null, 2));
+        // }
 
     } catch (error) {
         console.log(error);
