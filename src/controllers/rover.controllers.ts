@@ -151,10 +151,7 @@ export const getRoverPhotos = async (req: Request, res: Response) => {
                         };
                     })
 
-                    res.send(JSON.stringify({
-                        "status": 200,
-                        "data": resultData
-                    }, null, 2));
+                    res.send(JSON.stringify(resultData, null, 2));
                 }
             }).catch(function (error) {
                 if (error.response) {
